@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini AI Interface</title>
+    <style>
+        /* Styles pour le thème sombre et l'interface */
+        :root {
+            --background-color: #121212;
+            --text-color: #ffffff;
+            --primary-color: #6200ea;
+            --secondary-color: #03dac6;
+            --code-bg: #1e1e1e;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        header {
+            background-color: #1f1f1f;
+            padding: 15px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        main {
+            flex: 1;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        #chat-container {
+            max-height: 70vh;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            padding: 10px;
+            background-color: #181818;
+            border-radius: 5px;
+        }
+
+        .message {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        .user-message {
+            background-color: #2c2c2c;
+            align-self: flex-end;
+        }
+
+        .ai-response {
+            background-color: #252525;
+        }
+
+        #input-form {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        #user-input {
+            flex: 1;
+            padding: 10px;
+            background-color: #2c2c2c;
+            color: var(--text-color);
+            border: none;
+            border-radius: 5px;
+            min-width: 200px;
+        }
+
+        button {
+            padding: 10px 20px;
+            background-color: var(--primary-color);
+            color: var(--text-color);
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #7f39fb;
+        }
+
+        #file-upload {
+            padding: 10px;
+            background-color: #2c2c2c;
+            color: var(--text-color);
+            border-radius: 5px;
+        }
+
+        .code-block {
+            position: relative;
+            margin: 10px 0;
+            background-color: var(--code-bg);
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        .code-block pre {
+            margin: 0;
+            overflow-x: auto;
+        }
+
+        .code-actions {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            display: flex;
+            gap: 5px;
+        }
+
+        .code-actions button {
+            background-color: transparent;
+            border: none;
+            color: var(--secondary-color);
+            cursor: pointer;
+            font-size: 14px;
+            padding: 5px;
+        }
+
+        footer {
+            background-color: #1f1f1f;
+            padding: 10px;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        /* Responsive design */
+        @media (max-width: 600px) {
+            #input-form {
+                flex-direction: column;
+            }
+            button, #user-input, #file-upload {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Gemini AI Interface</h1>
+    </header>
+    <main>
+        <div id="chat-container" role="log" aria-live="polite"></div>
+        <form id="input-form">
+            <input type="text" id="user-input" placeholder="Entrez votre requête..." aria-label="Saisir une requête">
+            <button type="submit">Envoyer</button>
+            <button type="button" id="speak-btn">Parler</button>
+            <button type="button" id="listen-btn">Écouter</button>
+        </form>
+        <input type="file" id="file-upload" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" aria-label="Téléverser un fichier">
+    </main>
+    <footer>
+        <p>&copy; 2025 Gemini AI Interface</p>
+    </footer>
+    <script>
+        // Configuration de l'API
+        const API_KEY = 'AIzaSyDITGcxM9eIpRq4MvaQvUcg_IQqiflB_5A'; // Remplacez par votre clé API réelle
+        const MODEL = 'gemini-1.5-pro';
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
+        let chatHistory = [];
+
+        // Éléments du DOM
+        const inputForm = document.getElementById('input-form');
+        const userInput = document.getElementById('user-input');
+        const fileUpload = document.getElementById('file-upload');
+        const chatContainer = document.getElementById('chat-container');
+        const speakBtn = document.getElementById('speak-btn');
+        const listenBtn = document.getElementById('listen-btn');
+
+        // Gestion de la soumission du formulaire
+        inputForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const message = userInput.value.trim();
+            if (!message) return;
+
+            displayMessage(message, 'user-message');
+            const file = fileUpload.files[0];
+            let fileContent = null;
+
+            if (file) {
+                fileContent = await readFile(file);
+            }
+
+            const requestBody = {
+                contents: chatHistory.concat([{
+                    role: 'user',
+                    parts: [
+                        { text: message },
+                        ...(fileContent ? [{ inlineData: { mimeType: file.type, data: fileContent.split(',')[1] } }] : [])
+                    ]
+                }])
+            };
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (!response.ok) throw new Error('Erreur API');
+                const data = await response.json();
+                const aiResponse = data.candidates[0].content.parts[0].text;
+                displayResponse(aiResponse);
+
+                chatHistory.push({ role: 'user', parts: [{ text: message }] });
+                chatHistory.push({ role: 'model', parts: [{ text: aiResponse }] });
+            } catch (error) {
+                console.error('Erreur:', error);
+                displayResponse('Une erreur s\'est produite. Veuillez réessayer.');
+            }
+
+            userInput.value = '';
+            fileUpload.value = '';
+        });
+
+        // Lecture de fichier
+        function readFile(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // Affichage des messages utilisateur
+        function displayMessage(message, className) {
+            const messageDiv = document.createElement('div');
+            messageDiv.textContent = message;
+            messageDiv.classList.add('message', className);
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // Affichage des réponses de l'IA avec gestion des blocs de code
+        function displayResponse(response) {
+            const responseDiv = document.createElement('div');
+            responseDiv.classList.add('message', 'ai-response');
+
+            const codeBlockRegex = /```(\w+)?\n([\s\S]*?)\n```/g;
+            let match;
+            let lastIndex = 0;
+
+            while ((match = codeBlockRegex.exec(response)) !== null) {
+                if (match.index > lastIndex) {
+                    const text = response.substring(lastIndex, match.index);
+                    responseDiv.appendChild(document.createTextNode(text));
+                }
+                const language = match[1] || 'text';
+                const code = match[2];
+                const codeBlock = createCodeBlock(code, language);
+                responseDiv.appendChild(codeBlock);
+                lastIndex = codeBlockRegex.lastIndex;
+            }
+
+            if (lastIndex < response.length) {
+                const text = response.substring(lastIndex);
+                responseDiv.appendChild(document.createTextNode(text));
+            }
+
+            chatContainer.appendChild(responseDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // Création des blocs de code stylisés
+        function createCodeBlock(code, language) {
+            const codeBlock = document.createElement('div');
+            codeBlock.classList.add('code-block');
+            codeBlock.setAttribute('data-language', language);
+
+            const pre = document.createElement('pre');
+            const codeElement = document.createElement('code');
+            codeElement.textContent = code;
+            pre.appendChild(codeElement);
+            codeBlock.appendChild(pre);
+
+            const actions = document.createElement('div');
+            actions.classList.add('code-actions');
+            actions.innerHTML = `
+                <button class="copy-btn" aria-label="Copier le code">Copier</button>
+                <button class="edit-btn" aria-label="Modifier le code">Modifier</button>
+                <button class="download-btn" aria-label="Télécharger le code">Télécharger</button>
+            `;
+            codeBlock.appendChild(actions);
+
+            // Actions sur les boutons
+            actions.querySelector('.copy-btn').addEventListener('click', () => {
+                navigator.clipboard.writeText(code).then(() => {
+                    alert('Code copié dans le presse-papiers !');
+                });
+            });
+
+            actions.querySelector('.edit-btn').addEventListener('click', () => {
+                const newCode = prompt('Modifiez le code :', code);
+                if (newCode) {
+                    codeElement.textContent = newCode;
+                }
+            });
+
+            actions.querySelector('.download-btn').addEventListener('click', () => {
+                const extension = getFileExtension(language);
+                const blob = new Blob([code], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `code.${extension}`;
+                a.click();
+                URL.revokeObjectURL(url);
+            });
+
+            return codeBlock;
+        }
+
+        // Déterminer l'extension de fichier selon le langage
+        function getFileExtension(language) {
+            const extensions = {
+                python: 'py',
+                javascript: 'js',
+                java: 'java',
+                cpp: 'cpp',
+                html: 'html',
+                css: 'css',
+                sql: 'sql'
+            };
+            return extensions[language.toLowerCase()] || 'txt';
+        }
+
+        // Commandes vocales
+        const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        recognition.lang = 'fr-FR';
+        recognition.interimResults = false;
+
+        speakBtn.addEventListener('click', () => {
+            recognition.start();
+        });
+
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            userInput.value = transcript;
+            inputForm.dispatchEvent(new Event('submit'));
+        };
+
+        recognition.onerror = () => {
+            alert('Erreur de reconnaissance vocale. Vérifiez votre micro.');
+        };
+
+        // Lecture des réponses
+        listenBtn.addEventListener('click', () => {
+            const lastResponse = chatContainer.lastElementChild.textContent;
+            if (lastResponse) {
+                const utterance = new SpeechSynthesisUtterance(lastResponse);
+                utterance.lang = 'fr-FR';
+                speechSynthesis.speak(utterance);
+            }
+        });
+    </script>
+</body>
+</html>
